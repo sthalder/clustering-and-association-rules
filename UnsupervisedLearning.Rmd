@@ -1,0 +1,269 @@
+---
+title: "Unsupervised Learning"
+author: "Soumya Halder"
+date: "4/16/2020"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(factoextra)
+library(gridExtra)
+library(fpc)
+library(arules)
+library(arulesViz)
+```
+
+# Clustering and Association rules {.tabset .tabset-fade}
+
+## European Jobs {.tabset .tabset-fade}
+
+**Executive Sumamry**
+
+The European jobs data is grouped into 3 clusters and here are the details along with some key takeawyas:
+
+**Groups**
+
+- **Group 1** : Yugoslavia, Turkey
+- **Group 2** : UK, Norway, Denmark, Finland, France, WGermany, Netherlands, Austria, Switzerland, Portugal, Spain
+- **Group 3** : EGermany, Hungary, Greece, Rumania, Bulgaria, Poland, USSR 
+
+**Findings**
+
+- Countries in group 1 have high proportion of population employed in agricultre
+- Group 3 and 2 have high proportion of manufacturing employments, construction, social and personal services, transport and communication. They are almost equal and much higher than group 1
+- For service industries, group 2 takes the lead comfortably against the other 2
+- Group 1 have the highest employment in finance sector closely followed by group 2
+
+**Data Description**
+
+The European jobs data provides information on percentage of employment in different industries across the continent. The dataset is imported it contains 26 observations with 10 variables. The variables available are:
+
+- Country: Name of country
+- Agr: Percentage employed in agriculture
+- Min: Percentage employed in mining
+- Man: Percentage employed in manufacturing
+- PS: Percentage employed in power supply industries
+- Con: Percentage employed in construction
+- SI: Percentage employed in service industries
+- Fin: Percentage employed in finance
+- SPS: Percentage employed in social and personal services 
+- TC: Percentage employed in transport and communications 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+eur_jobs <- read.table('D:/MS BANA/Spring 20/Data Mining 2 7047/Case 3/europeanJobs.txt',
+                       header = T)
+paste('Dimension of the data: ')
+dim(eur_jobs)
+head(eur_jobs)
+```
+
+### K-means clustering
+
+The dataset in divided into 2 sets - train and test which contains 80% and 20% respectively. Also, the train data is scaled to perform k-means clustering. Post scaling, a sample of the data is displayed below.
+
+```{r warning=FALSE, message=FALSE}
+set.seed(13246464)
+index <- sample(nrow(eur_jobs), nrow(eur_jobs) * 0.80)
+
+ej_train <- eur_jobs[index, ]
+ej_train2 <- ej_train[ , 2:10]
+ej_test <- eur_jobs[-index, ]
+
+ej_train_sc <- scale(ej_train2)
+head(ej_train_sc)
+```
+
+The distance is calculated for all observations and it is displayed below. Blue color represents short distances while orange showcases higher distances between points.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# calculating euclidean distance
+ej_train_dist <- get_dist(ej_train_sc)
+fviz_dist(ej_train_dist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+We will perform k-means clustering with different number of clusters to observe its performance. Hence, we build 4 models with number of clusters as 2, 3, 4 and 5. The below grid displays all 4 models with varying cluster sizes. It can be seen that as the cluster sizes go on increasing, there are very few observations which form one cluster. For cluster size 5, there are 2 clusters with only 1 observation. Therefore, lets analyze and get the optimum number of clusters required for this data.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# K-Means Cluster Analysis, centers 3
+ej_train_k1 <- kmeans(x = ej_train_sc, centers = 2, nstart = 200) #2 cluster solution
+
+ej_train_k2 <- kmeans(x = ej_train_sc, centers = 3, nstart = 200) #3 cluster solution
+
+ej_train_k3 <- kmeans(x = ej_train_sc, centers = 4, nstart = 200) #4 cluster solution
+
+ej_train_k4 <- kmeans(x = ej_train_sc, centers = 5, nstart = 200) #5 cluster solution
+
+ej_train_p1 <- fviz_cluster(ej_train_k1, data = ej_train_sc)
+ej_train_p2 <- fviz_cluster(ej_train_k2, data = ej_train_sc)
+ej_train_p3 <- fviz_cluster(ej_train_k3, data = ej_train_sc)
+ej_train_p4 <- fviz_cluster(ej_train_k4, data = ej_train_sc)
+
+grid.arrange(ej_train_p1, ej_train_p2, ej_train_p3, ej_train_p4, nrow = 2)
+```
+
+The below function calculates the sum of squares within groups for different cluster sizes. The trend appears to be of an elbow curve. As the size goes on increasing, the sum of squares becomes stagnant. Therefore, we choose the size where the bend in the curve size appears which is 3.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# Determine number of clusters
+wss <- (nrow(ej_train_sc) - 1) * sum(apply(ej_train_sc, 2, var))
+for (i in 1:12) wss[i] <- sum(kmeans(ej_train_sc,
+                                     centers = i)$withinss)
+plot(1:12, wss, type = "b", xlab = "Number of Clusters", ylab = "Within groups sum of squares")
+```
+
+Similar opearation is performed here with a different approach and the result obtained here is almost identical to above. Though the line shows better results with more clusters, increasing the size will not give better results due to less data points and therefore, we continue with having 3 clusters.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+d = dist(ej_train_sc, method = "euclidean")
+result = matrix(nrow = 14, ncol = 3)
+for (i in 2:15) {
+  cluster_result = kmeans(ej_train_sc, i)
+  clusterstat = cluster.stats(d, cluster_result$cluster)
+  result[i - 1,1] = i
+  result[i - 1,2] = clusterstat$avg.silwidth
+  result[i - 1,3] = clusterstat$dunn   
+}
+plot(result[, c(1,2)], type = "l", ylab = 'silhouette width', xlab = 'number of clusters')
+```
+
+The model with cluster size 3 is visualized and summarized below. The group sizes are 2, 11 and 7 and below are the countries falling in those groups:
+
+- Group 1 : Yugoslavia, Turkey
+- Group 2 : UK, Norway, Denmark, Finland, France, WGermany, Netherlands, Austria, Switzerland, Portugal, Spain
+- Group 3 : EGermany, Hungary, Greece, Rumania, Bulgaria, Poland, USSR 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ej_train_k2
+ej_train_k2$centers
+ej_train_p2
+```
+
+The profiling of the clusters are done and here are some key takeawyas:
+- Countries in group 1 have high proportion of population employed in agricultre
+- Group 3 and 2 have high proportion of manufacturing employments, construction, social and personal services, transport and communication. They are almost equal and much higher than group 1
+- For service industries, group 2 takes the lead comfortably against the other 2
+- Group 1 have the highest employment in finance sector closely followed by group 2
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ej_train_km <- cbind(ej_train, ej_train_k2$cluster)
+
+ej_km_profile <- ej_train_km %>% 
+                        group_by(ej_train_k2$cluster) %>%
+                          summarise_at(vars("Agr":"TC"), mean)
+
+ej_km_profile
+```
+
+
+### Hierarchial clustering {.tabset .tabset-fade}
+
+The cluster model is built and plotted below on the same data.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#Calculate the distance matrix
+ej_train_sc_d <- dist(ej_train_sc)
+#Obtain clusters using the Wards method
+ej_train_sc_hc <- hclust(ej_train_sc_d, method = "ward")
+plot(ej_train_sc_hc)
+```
+
+Now, we cut the tree at a cluster of 3 and get the following output. As observed with k-means clustering, we get almost similar results with 3 groups. Here the group sizes are 9, 9 and 2. The group 3 is similar to group 1 in k-means with the same 2 countries. However, Portugal and Spain from group 2 to group 3 of k-means. Therefore, the 2 groups becomes of equal sizes in hierarchial clustering.
+
+However, as we observed the behavior by group 2 and 3 in k-means were pretty much on the similar lines with minor differences. Therefore, the above movement in groups won't have significant impact in our findings.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#Cut dendrogram at the 3 clusters level and obtain cluster membership
+ej_train_sc_hc3 = cutree(ej_train_sc_hc, k = 3)
+
+#See exactly which item are in third group
+ej_train[ej_train_sc_hc3 == 1, ]
+ej_train[ej_train_sc_hc3 == 2, ]
+ej_train[ej_train_sc_hc3 == 3, ]
+
+plotcluster(ej_train_sc, ej_train_sc_hc3)
+```
+
+
+## Food Association Analysis {.tabset .tabset-fade}
+
+**Executive Summary:**
+
+The below tables provides the rules of most frequently sold items.
+
+```{r ,echo=FALSE, warning=FALSE, message=FALSE}
+tf_rules <- read.csv('tf_ar.csv')
+DT::datatable(tf_rules)
+```
+
+
+**Data description**
+
+The food association data contains 19076 observations with 118 variables. It is seen that most transactions contain 1, 2, 3, 4 and 5 items. The most common items sold are bottled water, cheese slices, medium/small and slice of pepp.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+TransFood <- read.csv('https://xiaoruizhu.github.io/Data-Mining-R/data/food_4_association.csv')
+dim(TransFood)
+TransFood <- TransFood[, -1]
+# Find out elements that are not equal to 0 or 1 and change them to 1.
+Others <- which(!(as.matrix(TransFood) == 1 | as.matrix(TransFood) == 0), arr.ind = T )
+TransFood[Others] <- 1
+TransFood <- as(as.matrix(TransFood), "transactions")
+summary(TransFood)
+```
+
+Let's plot a frequency plot with a support of 0.1 to observe food items part of the list. As expected, the items mentioned above along with ice cream cone and souvenir drink are most common.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+itemFrequencyPlot(TransFood, support = 0.1, cex.names = 0.8)
+```
+
+There was one transaction which had 15 items in it. As observed here, this transaction contains all the most common items that were noted above.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+x <-  TransFood[size(TransFood) == 15]
+inspect(x)
+```
+
+
+Next, we build our model using association rules with a support value of 0.3% and confidence of 90%. The model statistics are available below.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# Run the apriori algorithm
+tf_ar <- apriori(TransFood, parameter = list(sup = 0.003, conf = 0.9,target = "rules"))
+summary(tf_ar)
+```
+
+A brief look into the rules formed by association rules is available below. With a support of 0.028 and confidence of 99%, it predicts if a transaction contains topping food, it will also contain ice cream cone.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+tf_ar_i <- inspect(tf_ar)
+tf_ar_i
+```
+
+Further, the below table shows when 2 items are bought together which is the most likely 3rd item to be bought. For example, if cheese cone and cheese sides are bought, then with a support of 93% and lift ~22, it can be said that hot dogs will also be bought.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+inspect(head(subset(tf_ar, size(tf_ar) > 2)))
+```
+
+Similar to the above case, below list provides information about cases where the lift is very light. In this case, the threshold chosen is to be 5.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+inspect(head(subset(tf_ar, lift > 5)))
+```
+
+The below figures here visualizes the model created. It shows the relation between support, confidence and lift from our model. Also, there's a visual representation of some rules created above which showcases the most frequently appearing items.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+plot(tf_ar)
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+plot(head(sort(tf_ar, by = "lift"), 10), method = "graph")
+plot(tf_ar, method = "grouped")
+```
+
